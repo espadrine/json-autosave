@@ -16,6 +16,9 @@ function JsonFile(data, file, options) {
 JsonFile.prototype = {
   set(key, value) { this.data[key] = value; },
   get(key) { return this.data[key]; },
+  // FIXME: detect data changes to avoid oversaving.
+  // Container changes can be seen through Object.observe.
+  // Non-container changes can be detected through ==.
   save() { return fsos.set(this.file, JSON.stringify(this.data)); },
   setInterval(ms) {
     clearInterval(this.intervalId);
@@ -34,7 +37,9 @@ function autosave(file, options) {
       } catch(e) { return reject(e); }
       resolve(new JsonFile(json, file, options));
     }).catch(function(e) {
-      resolve(new JsonFile(null, file, options));
+      fsos.set(file, 'null').then(function() {
+        resolve(new JsonFile(null, file, options));
+      });
     });
   });
 }
