@@ -1,32 +1,66 @@
 var fsos = require('fsos');
 
 // Abstraction over a JS object that can be serialized to JSON.
-// Use .data to modify it, or .set() / .get().
+// Use .data to modify it.
 // To modify how frequently it saves to disk, use .setInterval(ms).
 // You can also use .stop() to end the autosaving, .start() to resume it.
 function JsonFile(data, file, options) {
   options = options || {};
-  this.data = data;
+  this._data = data;
   this.file = file;
   this.interval = options.interval || 5000;  // 5 seconds.
-  this.autosave = function() { this.save(); }.bind(this);
+  var self = this;
+  // Called upon attempting to save data. Used for debugging purposes.
+  this.saveListener = options.saveListener || function(){};
+  this.autosave = function() {
+    self.save().then(self.saveListener).catch(self.saveListener);
+  };
   this.intervalId = setInterval(this.autosave, this.interval);
+
+  // Was ._data accessed since the beginning of the interval?
+  this.wasAccessed = false;
+  this.wasReset = false;
+  this.lastJson = JSON.stringify(this._data);
 }
 
 JsonFile.prototype = {
-  set(key, value) { this.data[key] = value; },
-  get(key) { return this.data[key]; },
-  // FIXME: detect data changes to avoid oversaving.
-  // Container changes can be seen through Object.observe.
-  // Non-container changes can be detected through ==.
-  save() { return fsos.set(this.file, JSON.stringify(this.data)); },
+  // Detect data changes to avoid oversaving.
+  hasChanged(json) {
+    var changed = true;
+    if (this.wasReset) { changed = true;
+    } else if (!this.wasAccessed) { changed = false;
+    // At this point, we have detected all changes for non-objects.
+    // What follows takes care of objects.
+    } else if (this.lastJson.length !== json.length) { changed = true;
+    } else { changed = (this.lastJson !== json); }
+    this.wasReset = false;
+    this.wasAccessed = false;
+    this.lastJson = json;
+    return changed;
+  },
+  get data() {
+    this.wasAccessed = true;
+    return this._data;
+  },
+  set data(value) {
+    this.wasReset = true;
+    return this._data = value;
+  },
+  // Save unless data was unchanged.
+  // Return a Promise.
+  save() {
+    var json = JSON.stringify(this._data);
+    if (this.hasChanged(json)) {
+      return fsos.set(this.file, json);
+    } else { return Promise.resolve(); }
+  },
   setInterval(ms) {
-    clearInterval(this.intervalId);
+    this.stop();
     this.interval = ms || 5000;  // 5 seconds.
-    this.intervalId = setInterval(this.autosave, this.interval);
+    this.start();
   },
   stop() { clearInterval(this.intervalId); },
-  start() { setInterval(this.interval); },
+  start() { this.intervalId = setInterval(this.autosave, this.interval); },
 };
 
 function autosave(file, options) {
