@@ -4,17 +4,21 @@ var fsos = require('fsos');
 // Use .data to modify it.
 // To modify how frequently it saves to disk, use .setInterval(ms).
 // You can also use .stop() to end the autosaving, .start() to resume it.
-function JsonFile(data, file, options) {
+//
+// options:
+// - interval: minimum time in milliseconds between saves.
+function JsonSave(data, file, options) {
   options = options || {};
+  this.interval = +options.interval;
+  // 5 seconds is the default interval.
+  if (Number.isNaN(this.interval)) { this.interval = 5000; }
+
   this._data = data;
   this.file = file;
-  this.interval = options.interval || 5000;  // 5 seconds.
   var self = this;
   // Called upon attempting to save data. Used for debugging purposes.
-  this.saveListener = options.saveListener || function(){};
-  this.autosave = function() {
-    self.save().then(self.saveListener).catch(self.saveListener);
-  };
+  this.commitListener = options.commitListener || function(){};
+  this.autosave = function() { self.save(); };
   this.intervalId = setInterval(this.autosave, this.interval);
 
   // Was ._data accessed since the beginning of the interval?
@@ -23,7 +27,7 @@ function JsonFile(data, file, options) {
   this.lastJson = JSON.stringify(this._data);
 }
 
-JsonFile.prototype = {
+JsonSave.prototype = {
   // Detect data changes to avoid oversaving.
   hasChanged(json) {
     var changed = true;
@@ -51,7 +55,8 @@ JsonFile.prototype = {
   save() {
     var json = JSON.stringify(this._data);
     if (this.hasChanged(json)) {
-      return fsos.set(this.file, json);
+      return fsos.set(this.file, json)
+        .then(this.commitListener).catch(this.commitListener);
     } else { return Promise.resolve(); }
   },
   setInterval(ms) {
@@ -63,16 +68,20 @@ JsonFile.prototype = {
   start() { this.intervalId = setInterval(this.autosave, this.interval); },
 };
 
+// options:
+// - interval: minimum time in milliseconds between saves.
+// - data: default data if there is none saved in the past.
 function autosave(file, options) {
   return new Promise(function(resolve, reject) {
     fsos.get(file).then(function(data) {
       try {
         var json = JSON.parse(data);
       } catch(e) { return reject(e); }
-      resolve(new JsonFile(json, file, options));
+      resolve(new JsonSave(json, file, options));
     }).catch(function(e) {
-      fsos.set(file, 'null').then(function() {
-        resolve(new JsonFile(null, file, options));
+      var data = options.data || null;
+      fsos.set(file, JSON.stringify(data)).then(function() {
+        resolve(new JsonSave(data, file, options));
       });
     });
   });

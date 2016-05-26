@@ -13,7 +13,7 @@ var testTimeout = 4000;  // 4s.
 function awaitSaving() {
   return new Promise(function(resolve, reject) {
     var to = setTimeout(function() { reject("Timeout"); }, testTimeout);
-    autosaved.saveListener = function() {
+    autosaved.commitListener = function() {
       clearTimeout(to);
       resolve();
     };
@@ -24,13 +24,15 @@ function awaitSaving() {
 var testFile = 'test-1';
 try { fs.unlinkSync(testFile); } catch(_) {}
 
-var autosaved, interval = 100;
-jsonAutosave(testFile, {interval: interval})
+var autosaved, interval = 0;
+jsonAutosave(testFile, {interval: interval, data: 'data'})
 .then(function(f) {
   autosaved = f;
+  assert.equal(f.interval, interval);
+  assert.equal(f.data, 'data');
   return fsos.get(testFile);
 }).then(function(val) {
-  assert.equal(''+val, 'null');
+  assert.equal(''+val, '"data"');
 }).catch(assertPromiseNotThrown)
 
 // Test setting data.
