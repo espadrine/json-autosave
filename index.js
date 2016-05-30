@@ -79,7 +79,12 @@ function autosave(file, options) {
       } catch(e) { return reject(e); }
       resolve(new JsonSave(json, file, options));
     }).catch(function(e) {
-      var data = options.data || null;
+      if (options.data === undefined) {
+        // JSON.stringify(undefined) === undefined…
+        var data = null;
+      } else {
+        var data = options.data;
+      }
       fsos.set(file, JSON.stringify(data)).then(function() {
         resolve(new JsonSave(data, file, options));
       });
